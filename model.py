@@ -9,13 +9,25 @@ from weight_drop import WeightDrop
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
-    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0, tie_weights=False):
+    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0, tie_weights=False, byte=False):
         super(RNNModel, self).__init__()
         self.lockdrop = LockedDropout()
         self.idrop = nn.Dropout(dropouti)
         self.hdrop = nn.Dropout(dropouth)
         self.drop = nn.Dropout(dropout)
-        self.encoder = nn.Embedding(ntoken, ninp)
+
+        if byte:
+            if ninp != 256:
+                raise ValueError('wrong embedding size for bytes: %d -> 256' % ninp)
+            assert ninp == 256
+            ntoken = 256
+            self.encoder = nn.Embedding(ntoken, ninp)
+            self.encoder.weight.data.copy_(torch.eye(256))
+            self.encoder.weight.requires_grad = False
+            print(self.encoder.weight.data)
+        else:
+            self.encoder = nn.Embedding(ntoken, ninp)
+
         assert rnn_type in ['LSTM', 'QRNN', 'GRU'], 'RNN type is not supported'
         if rnn_type == 'LSTM':
             self.rnns = [torch.nn.LSTM(ninp if l == 0 else nhid, nhid if l != nlayers - 1 else (ninp if tie_weights else nhid), 1, dropout=0) for l in range(nlayers)]
@@ -45,7 +57,7 @@ class RNNModel(nn.Module):
             #    raise ValueError('When using the tied flag, nhid must be equal to emsize')
             self.decoder.weight = self.encoder.weight
 
-        self.init_weights()
+        self.init_weights(byte)
 
         self.rnn_type = rnn_type
         self.ninp = ninp
@@ -60,9 +72,10 @@ class RNNModel(nn.Module):
     def reset(self):
         if self.rnn_type == 'QRNN': [r.reset() for r in self.rnns]
 
-    def init_weights(self):
+    def init_weights(self, byte):
         initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
+        if not byte:
+            self.encoder.weight.data.uniform_(-initrange, initrange)
         self.decoder.bias.data.fill_(0)
         self.decoder.weight.data.uniform_(-initrange, initrange)
 

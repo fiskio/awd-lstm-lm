@@ -48,7 +48,7 @@ parser.add_argument('--seed', type=int, default=1111,
                     help='random seed')
 parser.add_argument('--nonmono', type=int, default=5,
                     help='random seed')
-parser.add_argument('--cuda', action='store_false',
+parser.add_argument('--cuda', action='store_true',
                     help='use CUDA')
 parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                     help='report interval')
@@ -61,6 +61,9 @@ parser.add_argument('--beta', type=float, default=1,
                     help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
 parser.add_argument('--wdecay', type=float, default=1.2e-6,
                     help='weight decay applied to all weights')
+parser.add_argument('--bytes', action='store_true',
+                    help='Model using bytes instead of words (badass!)')
+
 args = parser.parse_args()
 
 # Set the random seed manually for reproducibility.
@@ -76,7 +79,12 @@ if torch.cuda.is_available():
 # Load data
 ###############################################################################
 
-corpus = data.Corpus(args.data)
+if args.bytes:
+    print('Modelling: BYTES')
+    corpus = data.ByteCorpus(args.data)
+else:
+    print('Modelling: WORDS')
+    corpus = data.Corpus(args.data)
 
 eval_batch_size = 10
 test_batch_size = 1
@@ -89,7 +97,7 @@ test_data = batchify(corpus.test, test_batch_size, args)
 ###############################################################################
 
 ntokens = len(corpus.dictionary)
-model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop, args.tied)
+model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop, args.tied, args.bytes)
 if args.cuda:
     model.cuda()
 total_params = sum(x.size()[0] * x.size()[1] if len(x.size()) > 1 else x.size()[0] for x in model.parameters())
@@ -179,7 +187,8 @@ stored_loss = 100000000
 
 # At any point you can hit Ctrl + C to break out of training early.
 try:
-    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+    train_params = filter(lambda p: p.requires_grad, model.parameters())
+    optimizer = torch.optim.SGD(train_params, lr=args.lr, weight_decay=args.wdecay)
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train()
